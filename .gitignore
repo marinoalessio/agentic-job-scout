@@ -1,1 +1,34 @@
+# environment secret keys
 .env
+
+# Virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Database (long-term memory)
+*.db
+*.sqlite
+
+# Audio output (voice agent)
+*.mp3
+*.wav
+*.ogg
+
+# PDF used as a test
+cv_docs/

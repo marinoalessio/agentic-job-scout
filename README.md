@@ -8,7 +8,7 @@
 
 Job Scout is a **multi-agent AI system** — not a single LLM call, but a pipeline of specialized agents that collaborate to produce a useful output. Each agent has one job, uses tools, and can be observed, evaluated, and improved independently.
 
-This project is also a **learning vehicle**. The goal is to understand, hands-on, how modern AI engineering works: agents, observability, evals, and LLM routing.
+This project is also a **learning vehicle**. The goal is to understand, hands-on, how modern AI engineering works: agents, observability, and evals.
 
 ---
 
@@ -76,9 +76,7 @@ Each agent is smaller, testable, and observable. You can improve the ranking age
 |---|---|---|
 | **Python** | Language | Standard for AI engineering |
 | **LangChain** | Agent framework | Gives you abstractions for chains, tools, memory, agents |
-| **LangSmith** | Observability (LangChain-native) | See every LLM call, input/output, latency — traces |
-| **Langfuse** | Observability (open-source alt.) | Alternative to LangSmith, self-hostable, adds evals UI |
-| **LiteLLM** | LLM router / proxy | One interface for OpenAI, Anthropic, Gemini etc. — swap models without rewriting |
+| **Langfuse** | Observability | See every LLM call, input/output, latency — traces + evals UI |
 | **FastAPI** | API layer | Expose the pipeline as an HTTP endpoint |
 | **Streamlit** | UI | Simple web UI for CV upload and results display |
 | **SQLite** | Long-term memory (structured) | Persist sessions, preferences, job history |
@@ -108,7 +106,7 @@ Every time an agent runs, you want to see:
 - How long it took
 - What tool was called and with what args
 
-This is a **trace**. LangSmith and Langfuse capture traces automatically when you instrument your code.
+This is a **trace**. Langfuse captures traces automatically when you instrument your code.
 
 ### 4. Evals
 After you have traces, you want to measure quality:
@@ -116,15 +114,9 @@ After you have traces, you want to measure quality:
 - Is the gap analysis honest and specific?
 - Is the cover letter generic or tailored?
 
-**Evals** are automated (or human) tests on LLM outputs. You define what "good" looks like, then run evals on a dataset of examples. Langfuse has a UI for this; LangSmith has its own eval runner.
+**Evals** are automated (or human) tests on LLM outputs. You define what "good" looks like, then run evals on a dataset of examples. Langfuse has a UI for this.
 
-### 5. LiteLLM
-Instead of calling `openai.chat.completions.create(...)` directly, you call `litellm.completion(model="gpt-4o", ...)`. This means:
-- You can switch to `claude-3-5-sonnet` by changing one string
-- You can route cheap tasks to cheaper models (e.g. ranking to `gpt-4o-mini`, cover letter to `gpt-4o`)
-- You get built-in cost tracking
-
-### 6. Skills (Agent Skills / Capabilities)
+### 5. Skills (Agent Skills / Capabilities)
 In some frameworks, "skills" are named, reusable capabilities that an agent exposes — think of them as the public API of an agent. In Claude Code (which powers this dev environment), skills are also a first-class concept. The idea is the same: decompose behavior into named, composable units.
 
 ### 7. Memory & Context Management
@@ -231,7 +223,7 @@ Build one phase at a time. Each phase produces something runnable.
 
 ### Phase 1 — Foundation
 - Set up the Python project (pyproject.toml, virtual env)
-- Install LangChain, LiteLLM
+- Install LangChain, openai (via Groq endpoint)
 - Write `cv_parser.py`: take a PDF, return a dict with name, skills, experience
 - Test it with your own CV
 
@@ -245,9 +237,8 @@ Build one phase at a time. Each phase produces something runnable.
 **Concept learned:** tool use, chaining agents, prompt engineering for scoring
 
 ### Phase 3 — Observability
-- Add LangSmith tracing to every agent
-- Run the pipeline, open LangSmith, inspect the traces
-- Optional: add Langfuse as a second observer
+- Add Langfuse tracing to every agent
+- Run the pipeline, open Langfuse, inspect the traces
 
 **Concept learned:** traces, what a span is, how to read a trace tree
 
@@ -266,29 +257,22 @@ Build one phase at a time. Each phase produces something runnable.
 
 **Concept learned:** multi-step agent pipelines, prompt chaining
 
-### Phase 5 — LiteLLM routing
-- Replace all direct OpenAI calls with LiteLLM
-- Use a cheaper model for ranking, a better model for the cover letter
-- Add cost logging
-
-**Concept learned:** LLM routing, cost management, model abstraction
-
-### Phase 6 — Voice
+### Phase 5 — Voice
 - Write `voice.py` using OpenAI TTS or ElevenLabs
 - Add it as the last step of the pipeline
 
 **Concept learned:** multimodal outputs, tool wrapping
 
-### Phase 7 — UI & API
+### Phase 6 — UI & API
 - Wrap the orchestrator in a FastAPI endpoint
 - Build a Streamlit UI for upload + results
 
 **Concept learned:** serving AI pipelines as web apps
 
-### Phase 8 — Evals
+### Phase 7 — Evals
 - Define what "good" looks like for ranking and gap analysis
 - Build a small dataset of test CVs + expected outputs
-- Write eval scripts using Langfuse or LangSmith
+- Write eval scripts using Langfuse
 
 **Concept learned:** LLM evals, dataset design, quality measurement
 
@@ -297,21 +281,16 @@ Build one phase at a time. Each phase produces something runnable.
 ## Prerequisites
 
 - Python 3.11+
-- **LLM API key:** choose any provider — LiteLLM makes switching a one-line change
-  - [Groq](https://console.groq.com) — free/on-demand tier, very fast inference
-  - [Google Gemini](https://aistudio.google.com) — free tier, good for high-volume tasks
-  - [OpenAI](https://platform.openai.com) — GPT-4o and above
-  - [Anthropic](https://console.anthropic.com) — Claude models
-- **Speech model** (for Voice Agent): any STT/TTS provider works
+- **LLM API key:** [Groq](https://console.groq.com) — free/on-demand tier, fast inference via OpenAI-compatible endpoint
+- **Speech model** (for Voice Agent):
   - Groq supports `whisper-large-v3` for speech-to-text (STT)
-  - OpenAI TTS, ElevenLabs, or similar for text-to-speech (TTS)
+  - OpenAI TTS or ElevenLabs for text-to-speech (TTS)
 - **Job board API key:** for Phase 2 (search agent)
   - [SerpAPI](https://serpapi.com) — 100 free searches/month
   - [Adzuna](https://developer.adzuna.com) — free tier available
-- LangSmith account (free tier works)
-- Langfuse account or local Docker instance (optional, Phase 3+)
+- Langfuse account or local Docker instance (Phase 3+)
 
-> Add your keys to `.env`. With LiteLLM, the provider is just a prefix: `groq/model-name`, `openai/model-name`, `anthropic/model-name`. Swap anytime without touching agent code.
+> Add your keys to `.env`. The `GROQ_BASE_URL` points the openai Python client at Groq's endpoint — swap the model name anytime without touching agent code.
 
 ---
 
