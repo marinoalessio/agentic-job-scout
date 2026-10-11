@@ -1,0 +1,23 @@
+{
+  "name": "Luca Ferrari",
+  "email": "luca.ferrari@email.com",
+  "location": "Milan, Italy",
+  "target_location": "Paris, France",
+  "skills": ["JavaScript", "React", "HTML", "CSS", "Git", "REST APIs"],
+  "experience": [
+    {
+      "role": "Junior Frontend Developer",
+      "company": "StartupXY",
+      "duration": "1 year",
+      "description": "Built React components for a SaaS product. Maintained the company website. Integrated REST APIs and handled state management with React hooks."
+    }
+  ],
+  "education": [
+    {
+      "degree": "BSc Information Technology",
+      "institution": "Politecnico di Milano",
+      "year": "2022"
+    }
+  ],
+  "languages": ["Italian", "English"]
+}

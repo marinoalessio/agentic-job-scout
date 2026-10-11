@@ -1,0 +1,70 @@
+{
+  "for_data_engineer": [
+    {
+      "id": "de_relevant_1",
+      "label": "relevant",
+      "title": "Senior Data Engineer – GCP",
+      "url": "https://jobs.example.com/senior-data-engineer-gcp",
+      "source": "jobs.example.com",
+      "description": "We are looking for a Senior Data Engineer to join our data platform team. You will design and maintain large-scale pipelines on Google Cloud Platform using BigQuery, Dataflow, and Cloud Composer (Airflow). Strong Python and SQL skills required. Experience with dbt and Terraform is a plus. 4+ years of experience in data engineering."
+    },
+    {
+      "id": "de_relevant_2",
+      "label": "relevant",
+      "title": "Analytics Engineer",
+      "url": "https://jobs.example.com/analytics-engineer",
+      "source": "jobs.example.com",
+      "description": "Join our analytics team to own the data transformation layer. You will work with dbt, BigQuery, and SQL to build clean, tested, documented data models. Python scripting experience required. You will collaborate with analysts and data scientists to deliver reliable datasets. GCP experience preferred."
+    },
+    {
+      "id": "de_irrelevant_1",
+      "label": "irrelevant",
+      "title": "Marketing Manager",
+      "url": "https://jobs.example.com/marketing-manager",
+      "source": "jobs.example.com",
+      "description": "We are seeking a Marketing Manager to lead our content strategy and growth campaigns. Responsibilities include SEO, social media management, email marketing, and managing external agencies. Strong communication and copywriting skills required. Experience with HubSpot and Google Analytics preferred. No technical background required."
+    },
+    {
+      "id": "de_irrelevant_2",
+      "label": "irrelevant",
+      "title": "Sales Representative – B2B SaaS",
+      "url": "https://jobs.example.com/sales-rep",
+      "source": "jobs.example.com",
+      "description": "We are hiring a motivated Sales Representative to grow our B2B client base. You will manage the full sales cycle from prospecting to close. Experience with Salesforce CRM required. Strong negotiation and communication skills. Quota-carrying experience preferred. No engineering background needed."
+    }
+  ],
+  "for_junior_developer": [
+    {
+      "id": "jd_relevant_1",
+      "label": "relevant",
+      "title": "Junior Frontend Developer",
+      "url": "https://jobs.example.com/junior-frontend",
+      "source": "jobs.example.com",
+      "description": "Great opportunity for a junior developer to grow in a supportive team. You will build and maintain React components, work with REST APIs, and collaborate on our web product. HTML, CSS, JavaScript, and basic Git knowledge required. React experience is a strong plus. 0-2 years of experience welcome."
+    },
+    {
+      "id": "jd_relevant_2",
+      "label": "relevant",
+      "title": "React Developer",
+      "url": "https://jobs.example.com/react-developer",
+      "source": "jobs.example.com",
+      "description": "We are looking for a React Developer to join our frontend team. You will implement UI features, write clean component-based code, and integrate with backend APIs. Strong JavaScript and React skills required. Familiarity with CSS frameworks and Git workflow expected. 1-3 years of experience."
+    },
+    {
+      "id": "jd_irrelevant_1",
+      "label": "irrelevant",
+      "title": "Senior Data Engineer – Spark & Airflow",
+      "url": "https://jobs.example.com/senior-de-spark",
+      "source": "jobs.example.com",
+      "description": "We need a seasoned Data Engineer with 5+ years of experience in building distributed data pipelines. Required: Apache Spark, Airflow, Python, SQL, and cloud data warehouses (Snowflake or BigQuery). Strong understanding of distributed systems and data modelling. Leadership experience a plus."
+    },
+    {
+      "id": "jd_irrelevant_2",
+      "label": "irrelevant",
+      "title": "Marketing Director",
+      "url": "https://jobs.example.com/marketing-director",
+      "source": "jobs.example.com",
+      "description": "Senior leadership role overseeing all marketing functions: brand strategy, demand generation, PR, and events. 8+ years of marketing experience required, with at least 3 years in a director role. MBA preferred. Strong analytical and people management skills."
+    }
+  ]
+}

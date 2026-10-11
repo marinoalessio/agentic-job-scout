@@ -1,0 +1,29 @@
+{
+  "name": "Giulia Romano",
+  "email": "giulia.romano@email.com",
+  "location": "Rome, Italy",
+  "target_location": "Sydney, Australia",
+  "skills": ["Python", "SQL", "BigQuery", "dbt", "Apache Airflow", "Spark", "GCP", "Terraform", "Looker"],
+  "experience": [
+    {
+      "role": "Senior Data Engineer",
+      "company": "Acme Analytics",
+      "duration": "3 years",
+      "description": "Built and maintained GCP-based data pipelines using Airflow and dbt. Led migration from on-prem warehouses to BigQuery. Managed Terraform infrastructure for data platform."
+    },
+    {
+      "role": "Data Analyst",
+      "company": "RetailCo",
+      "duration": "2 years",
+      "description": "Created SQL reports and dashboards in Looker. Automated ETL processes with Python. Collaborated with business teams on KPI definition."
+    }
+  ],
+  "education": [
+    {
+      "degree": "MSc Computer Science",
+      "institution": "Sapienza University of Rome",
+      "year": "2018"
+    }
+  ],
+  "languages": ["Italian", "English"]
+}
