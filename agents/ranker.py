@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from agents.cv_parser import CVProfile
 from agents.job_search import JobPosting
+from tracing import langfuse_handler
 
 load_dotenv()
 
@@ -103,13 +104,16 @@ def rank_job(profile: CVProfile, job: JobPosting) -> RankedJob:
         f"Languages: {', '.join(profile.languages)}"
     )
 
-    job_score = chain.invoke({
-        "profile_text": profile_text,
-        "job_title": job.title,
-        "job_source": job.source,
-        "job_description": job.description,
-        "format_instructions": parser.get_format_instructions(),
-    })
+    job_score = chain.invoke(
+        {
+            "profile_text": profile_text,
+            "job_title": job.title,
+            "job_source": job.source,
+            "job_description": job.description,
+            "format_instructions": parser.get_format_instructions(),
+        },
+        config={"callbacks": [langfuse_handler]},
+    )
 
     return RankedJob(
         title=job.title,

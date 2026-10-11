@@ -18,6 +18,7 @@ from langfuse import observe
 from pydantic import BaseModel
 
 from tools.pdf_extractor import extract_text_from_pdf
+from tracing import langfuse_handler
 
 load_dotenv()
 
@@ -126,10 +127,13 @@ def parse_cv(pdf_path: str) -> CVProfile:
 
     print(f"[cv_parser] Text extracted ({len(raw_text)} characters). Running chain...")
 
-    profile = chain.invoke({
-        "cv_text": raw_text,
-        "format_instructions": parser.get_format_instructions(),
-    })
+    profile = chain.invoke(
+        {
+            "cv_text": raw_text,
+            "format_instructions": parser.get_format_instructions(),
+        },
+        config={"callbacks": [langfuse_handler]},
+    )
 
     print(f"[cv_parser] Profile extracted for: {profile.name}")
     return profile

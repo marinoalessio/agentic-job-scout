@@ -66,13 +66,17 @@ def build_search_query(profile: CVProfile, location: str) -> str:
 # --- Main function ---
 
 @observe()
-def search_jobs(profile: CVProfile, location: str = "") -> list[JobPosting]:
+def search_jobs(profile: CVProfile, location: str = "", custom_query: str = "") -> list[JobPosting]:
     """
     Searches for job postings matching the profile using the Tavily tool.
 
+    If custom_query is provided (e.g. from the reformulator), it overrides
+    the auto-generated query. This allows the orchestrator to retry with
+    a better query without changing this agent's logic.
+
     Returns a list of JobPosting objects ready to be passed to the ranker.
     """
-    query = build_search_query(profile, location)
+    query = custom_query if custom_query else build_search_query(profile, location)
     print(f"[job_search] Query: '{query}'")
 
     # .invoke() is the standard way to call any LangChain tool.

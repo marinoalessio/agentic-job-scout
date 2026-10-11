@@ -45,12 +45,17 @@ This project is also a **learning vehicle**. The goal is to understand, hands-on
          │         Output: structured JSON profile
          │
          ├──▶ [2] Job Search Agent
-         │         Tool: web search / job board API
+         │         Tool: TavilySearch (LangChain tool)
          │         Output: list of raw job postings
          │
          ├──▶ [3] Ranking Agent
          │         Tool: LLM scoring prompt
          │         Output: jobs with score 0–100 + rationale
+         │
+         ├──▶ [3b] Query Reformulator (conditional)
+         │         Triggered if best score < threshold
+         │         Tool: LLM — analyses poor results, generates better query
+         │         Output: improved query → loops back to [2] and [3]
          │
          ├──▶ [4] Gap Analysis Agent
          │         Tool: LLM comparison prompt
@@ -67,6 +72,54 @@ This project is also a **learning vehicle**. The goal is to understand, hands-on
 
 **Why multiple agents instead of one big prompt?**
 Each agent is smaller, testable, and observable. You can improve the ranking agent without touching the cover letter generator. You can swap the job search tool without rewriting the pipeline.
+
+---
+
+## Orchestrator — How It Works
+
+The orchestrator is built with **LangChain LCEL** (LangChain Expression Language). Each step is a `RunnableLambda` that receives a shared state dict and enriches it with its output.
+
+```
+Input: {"profile": CVProfile, "location": str}
+         │
+         ▼
+┌─────────────────────┐
+│   _search           │  RunnableLambda — calls Job Search Agent
+│   adds: "jobs"      │  uses TavilySearch tool
+└─────────┬───────────┘
+          │
+          ▼
+┌─────────────────────┐
+│   _rank             │  RunnableLambda — calls Ranking Agent
+│   adds: "ranked"    │  scores each job 0–100 via LLM
+└─────────┬───────────┘
+          │
+          ▼
+┌─────────────────────────────────────────────────────────┐
+│   RunnableBranch                                        │
+│                                                         │
+│   if best_score < SCORE_THRESHOLD (default: 60)         │
+│   ┌─────────────────────────────────────────────┐       │
+│   │ _reformulate → _search → _rank → _keep_best │       │
+│   │ LLM rewrites the query, deduplicates URLs,  │       │
+│   │ keeps the better of the two result sets     │       │
+│   └─────────────────────────────────────────────┘       │
+│                                                         │
+│   else → passthrough (results are good enough)          │
+└─────────┬───────────────────────────────────────────────┘
+          │
+          ▼
+   Save session to SQLite + return SessionState
+```
+
+**Memory lifecycle in one run:**
+```
+Start
+ ├─ Load user_prefs (SQLite) → target_location
+ ├─ Parse CV → CVProfile
+ ├─ Run LCEL pipeline → SessionState (short-term memory)
+ └─ Save session + ranked jobs (SQLite, long-term memory)
+```
 
 ---
 
@@ -181,27 +234,29 @@ job-scout/
 ├── README.md                  ← you are here
 │
 ├── agents/
-│   ├── cv_parser.py           ← Agent 1
-│   ├── job_search.py          ← Agent 2
-│   ├── ranker.py              ← Agent 3
+│   ├── cv_parser.py           ← Agent 1 — PDF → CVProfile (LangChain chain)
+│   ├── job_search.py          ← Agent 2 — TavilySearch tool → JobPosting list
+│   ├── ranker.py              ← Agent 3 — scores jobs 0–100 (LangChain chain)
+│   ├── query_reformulator.py  ← Agent 3b — rewrites query if results are poor
 │   ├── gap_analysis.py        ← Agent 4
 │   ├── application_pack.py    ← Agent 5
 │   └── voice.py               ← Agent 6
 │
 ├── tools/
-│   ├── pdf_extractor.py       ← Tool used by Agent 1
-│   ├── job_board_api.py       ← Tool used by Agent 2
-│   └── tts.py                 ← Tool used by Agent 6
+│   └── pdf_extractor.py       ← Tool used by Agent 1
 │
 ├── memory/
-│   ├── session_store.py       ← Save/load full sessions (short → long term)
-│   ├── user_prefs.py          ← Persist user preferences across sessions
-│   └── vector_store.py        ← RAG: semantic search on past jobs
+│   ├── session_store.py       ← Long-term memory: saves sessions to SQLite
+│   └── user_prefs.py          ← Long-term memory: user preferences (SQLite)
 │
-├── orchestrator.py            ← Coordinates the full pipeline + memory lifecycle
+├── data/
+│   └── job_scout.db           ← SQLite database (gitignored)
+│
+├── orchestrator.py            ← LCEL pipeline: RunnableLambda + RunnableBranch
+├── tracing.py                 ← Langfuse CallbackHandler for LangChain tracing
 │
 ├── api/
-│   └── main.py                ← FastAPI app (HTTP endpoints)
+│   └── main.py                ← FastAPI app
 │
 ├── ui/
 │   └── app.py                 ← Streamlit UI
@@ -221,41 +276,45 @@ job-scout/
 
 Build one phase at a time. Each phase produces something runnable.
 
-### Phase 1 — Foundation
+### Phase 1 — Foundation ✅
 - Set up the Python project (pyproject.toml, virtual env)
 - Install LangChain, openai (via Groq endpoint)
-- Write `cv_parser.py`: take a PDF, return a dict with name, skills, experience
-- Test it with your own CV
+- Write `cv_parser.py`: PDF → CVProfile with `ChatPromptTemplate | ChatOpenAI | PydanticOutputParser`
 
-**Concept learned:** tools, basic LLM calls, structured output
+**Concepts learned:** LangChain chains, PydanticOutputParser, structured LLM output
 
-### Phase 2 — Search & Rank
-- Write `job_search.py` with a web search tool
-- Write `ranker.py` that scores each posting against the CV
-- Run the two agents in sequence manually
+### Phase 2 — Search & Rank ✅
+- Write `job_search.py` using `TavilySearch` (LangChain tool)
+- Write `ranker.py` scoring each job 0–100 with a LangChain chain
+- Location resolved from CV (`target_location`) or asked to user
 
-**Concept learned:** tool use, chaining agents, prompt engineering for scoring
+**Concepts learned:** LangChain tools, StrOutputParser, prompt engineering for scoring
 
-### Phase 3 — Observability
-- Add Langfuse tracing to every agent
-- Run the pipeline, open Langfuse, inspect the traces
+### Phase 3 — Observability ✅
+- Langfuse `CallbackHandler` injected via `config={"callbacks": [...]}` in every chain
+- All LLM calls visible in Langfuse with prompts, responses, latency
 
-**Concept learned:** traces, what a span is, how to read a trace tree
+**Concepts learned:** traces, LangChain callbacks, observability in AI pipelines
 
-### Phase 3.5 — Memory Layer
-- Implement short-term memory: the session state dict passed through the pipeline
-- Implement long-term memory: save each session to SQLite (profile, jobs, scores)
-- Add user preferences: persist "I don't want startups under 10 people"
-- (Advanced) Add vector store: semantic search on past jobs with ChromaDB
+### Phase 3.5 — Memory Layer + Smart Retry ✅
+- Short-term memory: `SessionState` dataclass flows through the pipeline
+- Long-term memory: sessions and ranked jobs saved to SQLite
+- User preferences: `target_location` persisted across runs
+- Orchestrator built with `RunnableLambda` + `RunnableBranch` (LCEL)
+- If best score < threshold → LLM reformulates query → retry with deduplication
 
-**Concept learned:** the three levels of memory, RAG basics, state management in pipelines
+**Concepts learned:** RunnableLambda, RunnableBranch, conditional pipelines, SQLite memory
 
-### Phase 4 — Gap Analysis + Application Pack
+### Phase 4 — Gap Analysis + Application Pack 🔲
 - Write `gap_analysis.py`
 - Write `application_pack.py`
-- Write `orchestrator.py` to run the full pipeline end to end
 
-**Concept learned:** multi-step agent pipelines, prompt chaining
+**Concepts learned:** multi-step prompt chaining, output reuse across agents
+
+### Phase 5 — Voice 🔲
+- Write `voice.py` using OpenAI TTS or ElevenLabs
+
+**Concepts learned:** multimodal outputs, tool wrapping
 
 ### Phase 5 — Voice
 - Write `voice.py` using OpenAI TTS or ElevenLabs
@@ -285,9 +344,7 @@ Build one phase at a time. Each phase produces something runnable.
 - **Speech model** (for Voice Agent):
   - Groq supports `whisper-large-v3` for speech-to-text (STT)
   - OpenAI TTS or ElevenLabs for text-to-speech (TTS)
-- **Job board API key:** for Phase 2 (search agent)
-  - [SerpAPI](https://serpapi.com) — 100 free searches/month
-  - [Adzuna](https://developer.adzuna.com) — free tier available
+- **Search API key:** [Tavily](https://app.tavily.com) — 1000 free searches/month, designed for AI agents
 - Langfuse account or local Docker instance (Phase 3+)
 
 > Add your keys to `.env`. The `GROQ_BASE_URL` points the openai Python client at Groq's endpoint — swap the model name anytime without touching agent code.
