@@ -1,26 +1,25 @@
 """
-Orchestrator
+Orchestrator — LangGraph
 
-Coordinates the full pipeline and manages the memory lifecycle.
+Uses LangGraph to build a stateful pipeline with conditional retry logic.
 
-New LangChain concepts:
-  - RunnableLambda: wraps any Python function as a chain component
-  - RunnableBranch: conditional routing — if condition → chain A, else → chain B
-
-The pipeline state flows as a dict through each step:
-  {"profile", "location"}
-    → search_step → adds "jobs"
-    → rank_step   → adds "ranked"
-    → retry_branch → if score low: reformulate → search → rank
-                   → else: passthrough
+Key LangGraph concepts:
+  - StateGraph: the graph that holds nodes and edges
+  - TypedDict: defines the schema of the state flowing through the graph
+  - Nodes: plain functions that receive the full state and return only the keys they update
+  - Edges: fixed connections between nodes
+  - Conditional edges: routing based on state values (replaces RunnableBranch)
 """
 
 import os
 import sys
+from typing import TypedDict
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dataclasses import dataclass
 
-from langchain_core.runnables import RunnableBranch, RunnableLambda
+from langgraph.graph import END, START, StateGraph
 
 from agents.cv_parser import CVProfile, parse_cv
 from agents.job_search import JobPosting, search_jobs
@@ -29,7 +28,24 @@ from agents.ranker import RankedJob, rank_jobs
 from memory import session_store, user_prefs
 from tracing import langfuse_handler
 
-SCORE_THRESHOLD = 60
+SCORE_THRESHOLD = 90
+
+
+# --- Pipeline state (TypedDict) ---
+# TypedDict defines the schema of the state that flows through the graph.
+# Every node receives the full state and returns a dict with only the keys it changes.
+# LangGraph automatically merges the returned dict into the existing state.
+# This means nodes are independent — each one only knows about what it needs.
+
+class PipelineState(TypedDict):
+    profile: CVProfile
+    location: str
+    jobs: list[JobPosting]
+    ranked: list[RankedJob]
+    custom_query: str
+    seen_urls: set
+    original_ranked: list[RankedJob]
+    retried: bool           # flag to prevent infinite retry loop
 
 
 # --- Short-term memory ---
@@ -42,7 +58,7 @@ class SessionState:
     ranked_jobs: list[RankedJob]
 
 
-# --- Location resolution ---
+# --- Location resolution (outside the graph — runs before pipeline) ---
 
 def resolve_location(profile: CVProfile) -> str:
     saved = user_prefs.get("target_location")
@@ -64,81 +80,96 @@ def resolve_location(profile: CVProfile) -> str:
     return location
 
 
-# --- Pipeline steps as RunnableLambda ---
-# Each step receives the full state dict and returns it enriched with new keys.
-# RunnableLambda turns any function into a chain component
-# that can be connected with | like any other LangChain runnable.
+# --- Graph nodes ---
+# Each node is a plain Python function.
+# Input: full PipelineState
+# Output: dict with only the keys to update — LangGraph merges it into the state
 
-def _search(state: dict) -> dict:
+def search_node(state: PipelineState) -> dict:
     jobs = search_jobs(
         state["profile"],
         location=state["location"],
         custom_query=state.get("custom_query", ""),
     )
-    # On retry, exclude URLs already seen in the first search
+    # On retry, filter out URLs already seen in the first attempt
     seen = state.get("seen_urls", set())
     if seen:
         jobs = [j for j in jobs if j.url not in seen]
         print(f"[orchestrator] After deduplication: {len(jobs)} new jobs.")
-    state["jobs"] = jobs
-    return state
+    return {"jobs": jobs}
 
 
-def _rank(state: dict) -> dict:
-    state["ranked"] = rank_jobs(state["profile"], state["jobs"])
-    return state
+def rank_node(state: PipelineState) -> dict:
+    ranked = rank_jobs(state["profile"], state["jobs"])
+    return {"ranked": ranked}
 
 
-def _reformulate(state: dict) -> dict:
-    """Generates a new query and stores it in state for the next search step."""
-    print(f"\n[orchestrator] Best score {state['ranked'][0].score}/100 is below {SCORE_THRESHOLD}. Reformulating...\n")
+def reformulate_node(state: PipelineState) -> dict:
+    print(f"\n[orchestrator] Best score {state['ranked'][0].score}/100 < {SCORE_THRESHOLD}. Reformulating...\n")
     original_query = f"{state['profile'].experience[0].role} job openings in {state['location']}"
     new_query = reformulate_query(original_query, state["profile"], state["ranked"])
     print(f"[orchestrator] New query: '{new_query}'")
-    state["custom_query"] = new_query
-    # Save seen URLs so _search can exclude duplicates on retry
-    state["seen_urls"] = {job.url for job in state["ranked"]}
-    # Save previous results to compare later
-    state["original_ranked"] = state["ranked"]
-    return state
+    return {
+        "custom_query": new_query,
+        "seen_urls": {job.url for job in state["ranked"]},
+        "original_ranked": state["ranked"],
+        "retried": True,
+    }
 
 
-def _keep_best(state: dict) -> dict:
-    """After retry, keeps whichever attempt had the better top score."""
+def keep_best_node(state: PipelineState) -> dict:
+    """Compares original and retry results, keeps the better set."""
     original = state.get("original_ranked", [])
     if original and original[0].score >= state["ranked"][0].score:
         print("[orchestrator] Reformulation did not improve results. Keeping original.")
-        state["ranked"] = original
-    else:
-        print(f"[orchestrator] Improved results (best score: {state['ranked'][0].score}/100). Using new results.")
-    return state
+        return {"ranked": original}
+    print(f"[orchestrator] Improved results (best: {state['ranked'][0].score}/100). Using new results.")
+    return {}
 
 
-# --- Chain assembly ---
+# --- Conditional edge ---
+# Returns a string that maps to the next node (or END).
+# Called after every rank_node execution.
 
-search_and_rank = RunnableLambda(_search) | RunnableLambda(_rank)
+def route_after_rank(state: PipelineState) -> str:
+    if state.get("retried", False):
+        # Second pass: compare results and finish
+        return "keep_best"
+    if state.get("ranked") and state["ranked"][0].score < SCORE_THRESHOLD:
+        # First pass, score is low: reformulate and retry
+        return "retry"
+    # First pass, score is good: done
+    return "end"
 
-retry_chain = (
-    RunnableLambda(_reformulate)
-    | RunnableLambda(_search)
-    | RunnableLambda(_rank)
-    | RunnableLambda(_keep_best)
+
+# --- Graph definition ---
+
+builder = StateGraph(PipelineState)
+
+# Nodes
+builder.add_node("search", search_node)
+builder.add_node("rank", rank_node)
+builder.add_node("reformulate", reformulate_node)
+builder.add_node("keep_best", keep_best_node)
+
+# Fixed edges
+builder.add_edge(START, "search")
+builder.add_edge("search", "rank")
+builder.add_edge("reformulate", "search")   # retry: go back to search with new query
+builder.add_edge("keep_best", END)
+
+# Conditional edge: after ranking, decide what to do
+builder.add_conditional_edges(
+    "rank",
+    route_after_rank,
+    {
+        "retry": "reformulate",
+        "keep_best": "keep_best",
+        "end": END,
+    },
 )
 
-# RunnableBranch takes a list of (condition, chain) tuples.
-# It evaluates conditions in order and runs the first matching chain.
-# The last argument is the default (passthrough when no condition matches).
-def _should_retry(state: dict) -> bool:
-    result = bool(state["ranked"]) and state["ranked"][0].score < SCORE_THRESHOLD
-    print(f"[orchestrator] Best score: {state['ranked'][0].score if state['ranked'] else 'N/A'} — retry: {result}")
-    return result
-
-retry_branch = RunnableBranch(
-    (_should_retry, retry_chain),
-    RunnableLambda(lambda state: state),
-)
-
-pipeline = search_and_rank | retry_branch
+pipeline = builder.compile()
 
 
 # --- Main function ---
@@ -149,9 +180,14 @@ def run(pdf_path: str) -> SessionState:
     profile = parse_cv(pdf_path)
     location = resolve_location(profile)
 
-    # Invoke the full LCEL pipeline with the initial state
     final_state = pipeline.invoke(
-        {"profile": profile, "location": location},
+        {
+            "profile": profile,
+            "location": location,
+            "retried": False,
+            "custom_query": "",
+            "seen_urls": set(),
+        },
         config={"callbacks": [langfuse_handler]},
     )
 

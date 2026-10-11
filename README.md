@@ -77,39 +77,47 @@ Each agent is smaller, testable, and observable. You can improve the ranking age
 
 ## Orchestrator — How It Works
 
-The orchestrator is built with **LangChain LCEL** (LangChain Expression Language). Each step is a `RunnableLambda` that receives a shared state dict and enriches it with its output.
+The orchestrator is built with **LangGraph** — a framework for stateful agent pipelines. Each step is a **node** (plain Python function), connected by **edges**. The state flows as a `TypedDict` through the graph; each node returns only the keys it updates.
 
 ```
-Input: {"profile": CVProfile, "location": str}
-         │
-         ▼
-┌─────────────────────┐
-│   _search           │  RunnableLambda — calls Job Search Agent
-│   adds: "jobs"      │  uses TavilySearch tool
-└─────────┬───────────┘
-          │
-          ▼
-┌─────────────────────┐
-│   _rank             │  RunnableLambda — calls Ranking Agent
-│   adds: "ranked"    │  scores each job 0–100 via LLM
-└─────────┬───────────┘
-          │
-          ▼
-┌─────────────────────────────────────────────────────────┐
-│   RunnableBranch                                        │
-│                                                         │
-│   if best_score < SCORE_THRESHOLD (default: 60)         │
-│   ┌─────────────────────────────────────────────┐       │
-│   │ _reformulate → _search → _rank → _keep_best │       │
-│   │ LLM rewrites the query, deduplicates URLs,  │       │
-│   │ keeps the better of the two result sets     │       │
-│   └─────────────────────────────────────────────┘       │
-│                                                         │
-│   else → passthrough (results are good enough)          │
-└─────────┬───────────────────────────────────────────────┘
-          │
-          ▼
-   Save session to SQLite + return SessionState
+                    ┌─────────────────────────────────────────┐
+                    │  PipelineState (TypedDict)              │
+                    │  profile, location, jobs, ranked,       │
+                    │  custom_query, seen_urls, retried        │
+                    └─────────────────────────────────────────┘
+
+START
+  │
+  ▼
+┌──────────────┐
+│  search      │  calls Job Search Agent (TavilySearch tool)
+│  → jobs      │  on retry: filters out already-seen URLs
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│  rank        │  calls Ranking Agent — scores each job 0–100 via LLM
+│  → ranked    │
+└──────┬───────┘
+       │
+       ▼  route_after_rank()  ← conditional edge
+       │
+       ├── score < threshold AND not retried ──▶ ┌──────────────────┐
+       │                                          │  reformulate     │
+       │                                          │  LLM rewrites    │
+       │                                          │  the query       │
+       │                                          │  → custom_query  │
+       │                                          │  → retried=True  │
+       │                                          └────────┬─────────┘
+       │                                                   │
+       │                                    loops back ────┘ (to search)
+       │
+       ├── retried=True ──▶ ┌──────────────┐
+       │                    │  keep_best   │  compares both result sets
+       │                    │              │  keeps the higher-scoring one
+       │                    └──────┬───────┘
+       │                           │
+       └── score ≥ threshold ──▶  END
 ```
 
 **Memory lifecycle in one run:**
@@ -117,7 +125,7 @@ Input: {"profile": CVProfile, "location": str}
 Start
  ├─ Load user_prefs (SQLite) → target_location
  ├─ Parse CV → CVProfile
- ├─ Run LCEL pipeline → SessionState (short-term memory)
+ ├─ Run LangGraph pipeline → PipelineState (short-term memory)
  └─ Save session + ranked jobs (SQLite, long-term memory)
 ```
 
@@ -128,7 +136,8 @@ Start
 | Tool | Role | Why You're Learning It |
 |---|---|---|
 | **Python** | Language | Standard for AI engineering |
-| **LangChain** | Agent framework | Gives you abstractions for chains, tools, memory, agents |
+| **LangChain** | Chain & prompt abstractions | ChatPromptTemplate, output parsers, tool wrappers |
+| **LangGraph** | Agent pipeline orchestration | Stateful graphs with nodes, edges, conditional routing |
 | **Langfuse** | Observability | See every LLM call, input/output, latency — traces + evals UI |
 | **FastAPI** | API layer | Expose the pipeline as an HTTP endpoint |
 | **Streamlit** | UI | Simple web UI for CV upload and results display |
@@ -252,7 +261,7 @@ job-scout/
 ├── data/
 │   └── job_scout.db           ← SQLite database (gitignored)
 │
-├── orchestrator.py            ← LCEL pipeline: RunnableLambda + RunnableBranch
+├── orchestrator.py            ← LangGraph pipeline: StateGraph, nodes, conditional edges
 ├── tracing.py                 ← Langfuse CallbackHandler for LangChain tracing
 │
 ├── api/
@@ -297,13 +306,13 @@ Build one phase at a time. Each phase produces something runnable.
 **Concepts learned:** traces, LangChain callbacks, observability in AI pipelines
 
 ### Phase 3.5 — Memory Layer + Smart Retry ✅
-- Short-term memory: `SessionState` dataclass flows through the pipeline
+- Short-term memory: `PipelineState` TypedDict flows through the LangGraph pipeline
 - Long-term memory: sessions and ranked jobs saved to SQLite
 - User preferences: `target_location` persisted across runs
-- Orchestrator built with `RunnableLambda` + `RunnableBranch` (LCEL)
-- If best score < threshold → LLM reformulates query → retry with deduplication
+- Orchestrator built with LangGraph: `StateGraph`, nodes, `add_conditional_edges`
+- If best score < threshold → LLM reformulates query → retry with URL deduplication
 
-**Concepts learned:** RunnableLambda, RunnableBranch, conditional pipelines, SQLite memory
+**Concepts learned:** LangGraph, TypedDict state, nodes, conditional edges, SQLite memory
 
 ### Phase 4 — Gap Analysis + Application Pack 🔲
 - Write `gap_analysis.py`
