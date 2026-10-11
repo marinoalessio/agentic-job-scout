@@ -21,7 +21,9 @@ from dataclasses import dataclass
 
 from langgraph.graph import END, START, StateGraph
 
+from agents.application_pack import ApplicationPack, generate_application_pack
 from agents.cv_parser import CVProfile, parse_cv
+from agents.gap_analysis import GapAnalysis, analyse_gap
 from agents.job_search import JobPosting, search_jobs
 from agents.query_reformulator import reformulate_query
 from agents.ranker import RankedJob, rank_jobs
@@ -46,6 +48,7 @@ class PipelineState(TypedDict):
     seen_urls: set
     original_ranked: list[RankedJob]
     retried: bool           # flag to prevent infinite retry loop
+    max_results: int        # how many jobs to fetch (set by caller)
 
 
 # --- Short-term memory ---
@@ -56,6 +59,8 @@ class SessionState:
     location: str
     jobs: list[JobPosting]
     ranked_jobs: list[RankedJob]
+    gap_analysis: GapAnalysis | None = None
+    application_pack: ApplicationPack | None = None
 
 
 # --- Location resolution (outside the graph — runs before pipeline) ---
@@ -90,6 +95,7 @@ def search_node(state: PipelineState) -> dict:
         state["profile"],
         location=state["location"],
         custom_query=state.get("custom_query", ""),
+        max_results=state.get("max_results", 5),
     )
     # On retry, filter out URLs already seen in the first attempt
     seen = state.get("seen_urls", set())
@@ -172,6 +178,27 @@ builder.add_conditional_edges(
 pipeline = builder.compile()
 
 
+# --- Job selection ---
+
+def select_job(ranked_jobs: list[RankedJob], prompt: str) -> RankedJob:
+    """
+    Shows the ranked list and asks the user to pick one by number.
+    Returns the selected RankedJob.
+    """
+    print(f"\n{prompt}")
+    for i, job in enumerate(ranked_jobs, 1):
+        print(f"  {i}. [{job.score}/100] {job.title} ({job.source})")
+
+    while True:
+        try:
+            choice = int(input(f"\nEnter number (1-{len(ranked_jobs)}): ").strip())
+            if 1 <= choice <= len(ranked_jobs):
+                return ranked_jobs[choice - 1]
+            print(f"Please enter a number between 1 and {len(ranked_jobs)}.")
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+
 # --- Main function ---
 
 def run(pdf_path: str) -> SessionState:
@@ -187,21 +214,39 @@ def run(pdf_path: str) -> SessionState:
             "retried": False,
             "custom_query": "",
             "seen_urls": set(),
+            "max_results": 5,
         },
         config={"callbacks": [langfuse_handler]},
     )
 
+    ranked = final_state["ranked"]
+
     session_store.save_session(
         candidate_name=profile.name,
         location=location,
-        ranked_jobs=final_state["ranked"],
+        ranked_jobs=ranked,
     )
+
+    # --- Phase 4: Gap Analysis ---
+    gap_job = select_job(ranked, "Which job do you want a gap analysis for?")
+    gap = analyse_gap(profile, gap_job)
+
+    # --- Phase 4: Application Pack ---
+    pack_job = select_job(ranked, "Which job do you want a cover letter for?")
+    if pack_job.url == gap_job.url:
+        # Reuse the gap analysis already computed
+        pack_gap = gap
+    else:
+        pack_gap = analyse_gap(profile, pack_job)
+    pack = generate_application_pack(profile, pack_job, pack_gap)
 
     return SessionState(
         profile=profile,
         location=location,
         jobs=final_state["jobs"],
-        ranked_jobs=final_state["ranked"],
+        ranked_jobs=ranked,
+        gap_analysis=gap,
+        application_pack=pack,
     )
 
 
@@ -219,3 +264,26 @@ if __name__ == "__main__":
         print(f"[{job.score}/100] {job.title}")
         print(f"  {job.rationale}")
         print(f"  {job.url}\n")
+
+    if state.gap_analysis:
+        g = state.gap_analysis
+        print(f"\n=== GAP ANALYSIS — {g.job_title} ===\n")
+        print("Strengths:")
+        for s in g.strengths:
+            print(f"  + {s}")
+        print("\nCritical gaps:")
+        for c in g.critical_gaps:
+            print(f"  ✗ {c}")
+        print("\nMinor gaps:")
+        for m in g.minor_gaps:
+            print(f"  ~ {m}")
+        print(f"\nRecommendation: {g.recommendation}")
+
+    if state.application_pack:
+        p = state.application_pack
+        print(f"\n=== APPLICATION PACK — {p.job_title} ===\n")
+        print("--- COVER LETTER ---")
+        print(p.cover_letter)
+        print("\n--- TALKING POINTS ---")
+        for i, tp in enumerate(p.talking_points, 1):
+            print(f"  {i}. {tp}")

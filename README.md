@@ -320,24 +320,13 @@ Build one phase at a time. Each phase produces something runnable.
 
 **Concepts learned:** multi-step prompt chaining, output reuse across agents
 
-### Phase 5 — Voice 🔲
-- Write `voice.py` using OpenAI TTS or ElevenLabs
-
-**Concepts learned:** multimodal outputs, tool wrapping
-
-### Phase 5 — Voice
-- Write `voice.py` using OpenAI TTS or ElevenLabs
-- Add it as the last step of the pipeline
-
-**Concept learned:** multimodal outputs, tool wrapping
-
-### Phase 6 — UI & API
+### Phase 5 — UI & API
 - Wrap the orchestrator in a FastAPI endpoint
 - Build a Streamlit UI for upload + results
 
 **Concept learned:** serving AI pipelines as web apps
 
-### Phase 7 — Evals
+### Phase 6 — Evals
 - Define what "good" looks like for ranking and gap analysis
 - Build a small dataset of test CVs + expected outputs
 - Write eval scripts using Langfuse
@@ -350,9 +339,6 @@ Build one phase at a time. Each phase produces something runnable.
 
 - Python 3.11+
 - **LLM API key:** [Groq](https://console.groq.com) — free/on-demand tier, fast inference via OpenAI-compatible endpoint
-- **Speech model** (for Voice Agent):
-  - Groq supports `whisper-large-v3` for speech-to-text (STT)
-  - OpenAI TTS or ElevenLabs for text-to-speech (TTS)
 - **Search API key:** [Tavily](https://app.tavily.com) — 1000 free searches/month, designed for AI agents
 - Langfuse account or local Docker instance (Phase 3+)
 

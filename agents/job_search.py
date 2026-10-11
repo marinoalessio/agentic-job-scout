@@ -26,7 +26,7 @@ load_dotenv()
 # Here we call it manually with .invoke() — in future phases
 # an agent will call it autonomously.
 search_tool = TavilySearch(
-    max_results=3,
+    max_results=10,   # fetch up to 10; callers can slice to fewer
     api_key=os.getenv("TAVILY_API_KEY"),
 )
 
@@ -66,7 +66,7 @@ def build_search_query(profile: CVProfile, location: str) -> str:
 # --- Main function ---
 
 @observe()
-def search_jobs(profile: CVProfile, location: str = "", custom_query: str = "") -> list[JobPosting]:
+def search_jobs(profile: CVProfile, location: str = "", custom_query: str = "", max_results: int = 5) -> list[JobPosting]:
     """
     Searches for job postings matching the profile using the Tavily tool.
 
@@ -97,7 +97,7 @@ def search_jobs(profile: CVProfile, location: str = "", custom_query: str = "") 
         )
         postings.append(posting)
 
-    return postings
+    return postings[:max_results]
 
 
 # --- Entry point ---

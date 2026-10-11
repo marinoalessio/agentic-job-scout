@@ -1,0 +1,10 @@
+[server]
+enableXsrfProtection = false
+enableCORS = false
+
+[theme]
+base = "light"
+backgroundColor = "#F7F6F2"
+secondaryBackgroundColor = "#EEECEA"
+textColor = "#1A1A2E"
+font = "sans serif"
