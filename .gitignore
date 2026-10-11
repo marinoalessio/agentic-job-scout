@@ -24,6 +24,7 @@ build/
 # Database (long-term memory)
 *.db
 *.sqlite
+data/
 
 # Audio output (voice agent)
 *.mp3
